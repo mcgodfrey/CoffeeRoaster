@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <!-- This ha to come *before* any stylesheets are declared -->
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta http-equiv="cache-control" content="no-cache, must-revalidate, max-age=0, post-check=0, pre-check=0">
+    <meta http-equiv="expires" content="-1">
+    <meta http-equiv="pragma" content="no-cache">
+
+    <!-- JQuery CDN -->
+    <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.3/umd/popper.min.js" integrity="sha384-vFJXuSJphROIrBnz7yo7oB41mKfc8JzQZiCq4NCceLEaO4IHwicKwpJf9c9IpFgh" crossorigin="anonymous"></script>
+
+    <!-- Bootstrap CDN and setup -->
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta.2/css/bootstrap.min.css" integrity="sha384-PsH8R72JQ3SOdhVi3uxftmaW6Vc51MKb0q5P2rRUpPvrszuE4W1povHYgTpBfshb" crossorigin="anonymous">
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta.2/js/bootstrap.min.js" integrity="sha384-alpBpkh1PFOepccYVYDB4do5UnbKysX5WZXm3XxPqe5iKTfUKjNkCk9SaVuEZflJ" crossorigin="anonymous"></script>
+
+    <!-- Chart.js CDN -->
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.7.2/Chart.bundle.js"></script>
+    <!--<meta content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0' name='viewport'>-->
+
+    
+    <link rel="stylesheet" type="text/css" href="main.css?=time()">
+    <!--<link rel="icon" href="{{url_for('static', filename='icons/icon.png')}}">-->
+    
+    
+    <title>Coffee Roaster</title>
+
+</head>
+
+<body>
+    <nav class="navbar navbar-expand-md navbar-dark fixed-top bg-dark">
+      <a class="navbar-brand" href="/">Home</a>
+      <button class="navbar-toggler d-lg-none" type="button" data-toggle="collapse" data-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+
+      <div class="collapse navbar-collapse" id="navbar">
+        <ul class="navbar-nav mr-auto">
+          <li class="nav-item">
+            <a class="nav-link" href="/temperature.html">Dashboard</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/status">Status</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/temperature">Get tempreature</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/list">File listing</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/upload">upload</a>
+          </li>
+        </ul>
+      </div>
+    </nav>
+
+  <div class="container-fluid">
+    <h1 class="page-header display-4">Coffee Roaster</h1>
+
+    <!-- simple_controls are for manually setting things up -->
+    <div class="row" id="simple_controls">
+      
+      <div class="card col-sm-4" >
+        <div class="card-body">
+          <h5 class="card-title">Temperature Settings</h5>
+          <div class="form-group row">
+            <label for="setpoint_temp" class="col-sm-5 col-form-label">Setpoint:</label>
+            <div class="col-sm-7">
+              <input type="number" increment="1" class="form-control" id="setpoint_temp">
+            </div>
+            <label for="setpoint_ramp_rate" class="col-sm-5 col-form-label">Ramp Rate:</label>
+            <div class="col-sm-7">
+              <input type="number" increment="10" class="form-control" id="setpoint_ramp_rate">
+            </div>
+            <button type="button" class="btn btn-primary" id="simple_start_stop_button">Start</button>
+            <button type="button" class="btn btn-primary" id="simple_restart_button" style="display:none">Restart</button>
+          </div>
+        </div>
+      </div>
+
+        
+      <div class="card col-sm-4" >
+        <div class="card-body">
+          <h5 class="card-title">PID settings</h5>
+          <div class="form-group row">
+            <label for="setpoint_P" class="col-sm-5 col-form-label">P:</label>
+            <div class="col-sm-7">
+              <input type="number" increment="0.1" min="0" class="form-control" id="setpoint_P">
+            </div>
+            <label for="setpoint_I" class="col-sm-5 col-form-label">I:</label>
+            <div class="col-sm-7">
+              <input type="number" increment="0.1" min="0" class="form-control" id="setpoint_I">
+            </div>
+            <label for="setpoint_D" class="col-sm-5 col-form-label">D:</label>
+            <div class="col-sm-7">
+              <input type="number" increment="0.1" min="0" class="form-control" id="setpoint_D">
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="card col-sm-4" >
+        <div class="card-body">
+          <h5 class="card-title">Program mode</h5>
+          <div class="form-group row">
+            <button type="button" class="btn btn-primary" id="switch_to_program_mode_button">Switch to program mode</button>
+          </div>
+        </div>
+      </div>
+
+
+    </div>        
+    
+
+    <!-- program_controls are for inputting a full roast profile -->
+    <div id="program_controls" style="display:none;">
+
+      <div class="row">
+        
+        <div class="card col-sm-4" >
+          <div class="card-body">
+            <h5 class="card-title">Program Control</h5>
+            <div class="form-group row">
+              <label for="program_filename" class="col-sm-5 col-form-label">Filename:</label>
+              <div class="col-sm-7">
+                <input type="text" class="form-control" id="program_filename">
+              </div>
+            </div>
+            <div class="form-group">
+              <button type="button" class="btn btn-primary" id="program_preheat_button">Preheat</button>
+              <button type="button" class="btn btn-success" id="program_start_button" disabled>Start</button>
+              <button type="button" class="btn btn-danger" id="program_abort_button" disabled>Abort</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card col-sm-4" >
+          <div class="card-body">
+            <h5 class="card-title">PID settings</h5>
+            <div class="form-group row">
+              <label for="setpoint_P" class="col-sm-5 col-form-label">P:</label>
+              <div class="col-sm-7">
+                <input type="number" increment="0.1" class="form-control" id="setpoint_P">
+              </div>
+              <label for="setpoint_I" class="col-sm-5 col-form-label">I:</label>
+              <div class="col-sm-7">
+                <input type="number" increment="0.1" class="form-control" id="setpoint_I">
+              </div>
+              <label for="setpoint_D" class="col-sm-5 col-form-label">D:</label>
+              <div class="col-sm-7">
+                <input type="number" increment="0.1" class="form-control" id="setpoint_D">
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="card col-sm-4" >
+          <div class="card-body">
+            <h5 class="card-title">Simple mode</h5>
+            <div class="form-group row">
+              <button type="button" class="btn btn-primary" id="switch_to_simple_mode_button">Switch to simple mode</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+
+      <div class="row">
+        <div class="card col" >
+          <div class="card-body">
+            <h5 class="card-title">Program Settings</h5>
+            <table id="program_table" class="table">
+              <thead>
+                <th>
+                  <input class="form-control" type="text" name="program_name" id="program_name" placeholder="Program Name">
+                </th>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <input class="form-control" type="text" name="step_name_1" id="step_name_1" placeholder="step name">
+                  </td>
+                  <td>
+                    <input class="form-control" type="number" name="temp_1" id="temp_1" placeholder="Target Temperature">
+                  </td>
+                  <td>
+                    <input class="form-control" type="number" name="ramp_rate_1" id="ramp_rate_1" placeholder="Ramp Rate">
+                  </td>
+                  <td>
+                    <input class="form-control" type="number" name="hold_time_1" id="hold_time_1" placeholder="Hold Time">
+                  </td>
+                  <td>
+                    <button type="button" class="close" id="remove_step_1">
+                      <span>&times;</span>
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+              <tfoot>
+                <td>
+                  <input type="button" class="btn btn-primary" id="add_step" value="Add Step"/>
+                </td>
+                <td>
+                  <input type="button" class="btn btn-primary" id="upload_program" value="Upload"/>
+                </td>
+              </tfoot>
+            </table>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+    <div class="row" id="main_display">
+      <div class="col-sm-10">
+          <div id="chart_div">
+            <canvas id="myChart" width="300" height="100"></canvas>
+          </div>
+      </div>
+      <div class="col-sm-2">
+          <div class="card" >
+            <div class="card-body">
+              <h5 class="card-title">Status</h5>
+              <p id="status_state">State = </p>
+              <p id="status_setpoint">Setpoint = </p>
+              <p id="status_temp">Temp = </p>
+              <p id="status_P">P = </p>
+              <p id="status_I">I = </p>
+              <p id="status_D">D = </p>
+              <p id="status_duty_cycle">duty_cycle = </p>
+            </div>
+          </div>
+      </div>
+    </div>
+
+  <script src="temperatureGraph.js"></script>
+
+</body>
+
+</html>

@@ -1,0 +1,45 @@
+/*
+body {
+	font-family: 'Roboto', sans-serif;
+	font-size: 22pt;
+	margin: 0;
+	margin-top: 6px;
+    color: #444;
+    background-color: #ddd;
+}
+
+h1 {
+	font-size: 1.5em;
+	font-weight: normal;
+	margin: 0px 0px 12px 0px;
+}
+
+button {
+    font-size: 14pt;
+	width: 2em;
+}
+
+center {
+	padding: 1em;
+	margin: auto;
+	width: 90%;
+	box-shadow: #777 2px 2px 5px;
+	box-sizing: border-box;
+}
+*/
+
+
+/* Shift all the page content down 50px to account for the navbar at the top */
+body {
+    padding-top: 50px;
+}
+
+/* Hide default 1px border */
+.navbar-fixed-top {
+    border: 0;
+}
+
+.page-header {
+    margin: 15px;
+    border-bottom: 1px solid #ccc;
+}
