@@ -273,6 +273,10 @@ function change_d() {
     connection.send('{"parameters":{"d":'+d+'}}');
 }
 
+function save_config(){
+    connection.send('{"commands":["saveConfig"]}');
+}
+
 function start_controller(){
     document.getElementById("simple_start_stop_button").innerHTML = "Stop";
     document.getElementById("simple_restart_button").style.display = "";
@@ -311,6 +315,7 @@ document.getElementById("setpoint_ramp_rate").onchange = change_ramp_rate;
 document.getElementById("setpoint_P").onchange = change_p;
 document.getElementById("setpoint_I").onchange = change_i;
 document.getElementById("setpoint_D").onchange = change_d;
+document.getElementById("save_config_button").onclick = save_config;
 document.getElementById("simple_restart_button").onclick = restart_controller;
 document.getElementById("simple_start_stop_button").onclick = function() {
     var b = document.getElementById("simple_start_stop_button")

@@ -17,7 +17,7 @@
 
 class TriacOutput {
  public:
-  float duty_cycle; //duty cycle [0, 100]
+  double duty_cycle; //duty cycle [0, 100]
   
   TriacOutput(int8_t triggerPin_in);
 

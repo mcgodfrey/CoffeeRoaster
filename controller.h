@@ -8,8 +8,9 @@
 #include <Arduino.h>
 #include <SPI.h>
 #include "Adafruit_MAX31855.h"
-#include "output.h"
+#include "triacOutput.h"
 #include "fan.h"
+#include "mypid.h"
 
 
 #define MAX_PREHEAT_TIME 120
@@ -25,40 +26,35 @@ class Controller{
   public:
     ProgramMode programMode;
     State state;
-    String filename;
-    float preheat_temp;
-    float ramp_rate;
-    float hold_temp;
-    float hold_time;
-    float max_preheat_time;
-    float temperature;
-    float setpoint;
-    float p;
-    float i;
-    float d;
+    double ramp_rate;
+    
     Adafruit_MAX31855 thermocouple;
     TriacOutput triac;
     Fan fan;
+    PID myPID;
 
     Controller(uint8_t triac_pin, uint8_t fan_pin);
-    void reset();
-    void setMode(String mode_in);
-    void updateSetpoint(float setpoint_in);
-
-    void measureTemperature();
-    void updateState();
-    float computeOutput();
-
+    
+    void process(uint32_t actualTime);
     void start();
     void stop();
     void restart();
 
-    void set_p(float p);
-    void set_i(float i);
-    void set_d(float d);
+    double getTemperature();
 
-  private:
-    uint32_t _state_start_time;
+    void setSetpoint(double setpoint);
+    double getSetpoint();
+
+    void setP(double p);
+    void setI(double i);
+    void setD(double d);
+
+    double getP();
+    double getI();
+    double getD();
+    
+    bool loadConfig();
+    bool saveConfig();
 };
 
 extern Controller controller;

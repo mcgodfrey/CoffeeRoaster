@@ -1,122 +1,90 @@
-#include "controller.h"
-#include "mypid.h"
 #include <FS.h>
+#include <ArduinoJson.h>
+#include "controller.h"
+#include "webServer.h"
 
+
+#define DEFAULT_P 0.4
+#define DEFAULT_I 0.03
+#define DEFAULT_D 0.02
 
 Controller controller(TRIAC_PIN, FAN_PIN);
 
-Controller::Controller(uint8_t triac_pin, uint8_t fan_pin) : thermocouple(SS), triac(triac_pin), fan(fan_pin) {
+String config_filename = String("config.json");
+
+
+Controller::Controller(uint8_t triac_pin, uint8_t fan_pin) :
+    thermocouple(SS),
+    triac(triac_pin),
+    fan(fan_pin),
+    myPID(DEFAULT_P, DEFAULT_I, DEFAULT_D) {
 
   state = OFF;
   programMode = SIMPLE;
-  filename = String("temp.csv");
-  preheat_temp = 0;
   ramp_rate = 0;
-  hold_temp = 0;
-  hold_time = 0;
-  max_preheat_time = MAX_PREHEAT_TIME;
-  temperature = 0;
 
-  setpoint = 0;
-  p = 10;
-  i = 0;
-  d = 0;
-
-  _state_start_time = 0;
-
-  PIDSetOutputLimits(0, 100);
-  PIDSetTunings(p, i, d);
-  PIDSetpoint(setpoint);
-
+  // initialise my objects and put into a safe state
+  triac.disable();
+  fan.off();
+  myPID.setOutputLimits(0, 100);
+  myPID.setSetpoint(0);
   thermocouple.begin();
 }
 
 
-void Controller::measureTemperature(){
-  temperature = thermocouple.readCelsius();
-}
-
-
-void Controller::updateState(){
-  if(programMode == PROGRAM){
-    switch(state){
-      case OFF:
-        break;
-      case PREHEATING:
-        if(temperature > preheat_temp){
-          state = PREHEAT;
-          _state_start_time = millis();
-        }
-        break;
-      case PREHEAT:
-        if(millis() - _state_start_time > max_preheat_time*1000){
-          // sat in preheat state for too long
-          state = COOLING;
-        }
-        break;
-      case RAMPING:
-        if(temperature > hold_temp){
-          state = HOLD;
-          _state_start_time = millis();
-        }
-        break;
-      case HOLD:
-        if(millis() - _state_start_time > hold_time*1000){
-          state = COOLING;
-        }
-        break;
-      case COOLING:
-        if(temperature < SAFE_TEMP){
-          state = OFF;
-        }
-        break;
-      default:
-        state = OFF;
-        break;
+void Controller::process(uint32_t actualTime){
+  if(controller.programMode == SIMPLE){
+    double temperature = getTemperature();
+    webserverPushData("temperature", temperature);
+    if(controller.state == OFF){
+      controller.triac.disable();
+      controller.fan.off();
+    }else if(controller.state == HOLD){
+      controller.fan.on();
+      double output = myPID.compute(temperature);
+     webserverPushData("duty_cycle", output);
+      triac.duty_cycle = output;
+      triac.enable();
+      webserverPushDatapoint(actualTime, myPID.getSetpoint(), output, temperature);
+    }else{
+      //Error: unexpected state
+      String error_msg = String("Error - unexpected state: ") + String(controller.state);
+      Serial.println(error_msg);
+      webserverLog(error_msg);
+      controller = Controller(TRIAC_PIN, FAN_PIN);
     }
+  }else{
+    //error reset the controller
+    String error_msg = String("Error - unknown programMode: ") + String(controller.programMode);
+    Serial.println(error_msg);
+    webserverLog(error_msg);
+    controller = Controller(TRIAC_PIN, FAN_PIN);
   }
+  return;
 }
 
-void Controller::setMode(String mode_in){
-  if(mode_in == "SIMPLE"){
-    if(programMode != SIMPLE){
-      programMode = SIMPLE;
-      state = OFF;
-      filename = String("temp.csv");
-    }
-  }else if(mode_in == "PROGRAM"){
-    if(programMode != PROGRAM){
-      programMode = PROGRAM;
-      state = OFF;
-    }
-  }
+double Controller::getTemperature(){
+  return(thermocouple.readCelsius());
 }
 
-void Controller::updateSetpoint(float _setpoint){
-  setpoint = _setpoint;
-  PIDSetpoint(setpoint);
+void Controller::setSetpoint(double setpoint){
+  myPID.setSetpoint(setpoint);
 }
-
-
-float Controller::computeOutput(){
-  return(PIDCompute(temperature));
+double Controller::getSetpoint(void){
+  return(myPID.getSetpoint());
 }
 
 
 void Controller::start(){
-  if(programMode == SIMPLE){
-    if(state != HOLD){
-      PIDreset();
-      SPIFFS.remove("/"+filename);
-      File tempLog = SPIFFS.open("/"+filename, "w");
-      tempLog.println("Time,Setpoint,Output,Temperature");
-      tempLog.close();
-      state = HOLD;
-    }
-  }else if(programMode == PROGRAM){
-    if(state != OFF){
-      state = OFF;
-    }
+  if(state != HOLD){
+    myPID.reset();
+    state = HOLD;
+  }
+}
+
+void Controller::stop(){
+  if(state != OFF){
+    state = OFF;
   }
 }
 
@@ -125,31 +93,101 @@ void Controller::restart(){
   start();
 }
 
-void Controller::stop(){
-  if(programMode == SIMPLE){
-    if(state != OFF){
-      state = OFF;
-    }
-  }else if(programMode == PROGRAM){
-    if((state != OFF) && (state != COOLING)){
-      state = COOLING;
-    }
+
+// Set/Get PID parameters
+void Controller::setP(double p){
+  myPID.setP(p);
+}
+void Controller::setI(double i){
+  myPID.setI(i);
+}
+void Controller::setD(double d){
+  myPID.setD(d);
+}
+
+double Controller::getP(){
+  return(myPID.getP());
+}
+double Controller::getI(){
+  return(myPID.getI());
+}
+double Controller::getD(){
+  return(myPID.getD());
+}
+
+bool Controller::loadConfig(){
+  Serial.println("Loading config");
+  if(!SPIFFS.exists("/"+config_filename)){
+    Serial.println("  Config file doesn't exist");
+    return(true);
   }
+
+  File configFile = SPIFFS.open("/"+config_filename, "r");
+  if (!configFile) {
+    Serial.println("  Failed to open config file");
+    return false;
+  }
+
+  // Allocate a buffer to store contents of the file and read it in
+  size_t size = configFile.size();
+  std::unique_ptr<char[]> buf(new char[size]);
+  configFile.readBytes(buf.get(), size);
+  configFile.close();
+
+  // parse it
+  StaticJsonBuffer<200> jsonBuffer;
+  JsonObject& json = jsonBuffer.parseObject(buf.get());
+
+  if (!json.success()) {
+    Serial.println("Failed to parse config file");
+    return false;
+  }
+
+  if(json.containsKey("p")){
+    setP(json["p"]);
+  }
+  if(json.containsKey("i")){
+    setI(json["i"]);
+  }
+  if(json.containsKey("d")){
+    setD(json["d"]);
+  }
+  return true;
 }
 
-void Controller::set_p(float _p){
-  p = _p;
-  PIDSetTunings(p, i, d);
+
+bool Controller::saveConfig(){
+  Serial.println("Saving Config");
+
+  Serial.println("  Creating JSON object");
+  StaticJsonBuffer<200> jsonBuffer;
+  JsonObject& json = jsonBuffer.createObject();
+  json["p"] = myPID.getP();
+  json["i"] = myPID.getI();
+  json["d"] = myPID.getD();
+
+  if(SPIFFS.exists("/"+config_filename)){
+    Serial.println("   Config file already exists. Deleting old one first");
+    SPIFFS.remove("/"+config_filename);
+  }
+
+  Serial.println("   Opening the config file");
+  File configFile = SPIFFS.open("/"+config_filename, "w");
+  if (!configFile) {
+    Serial.println("Failed to open config file for writing");
+    return false;
+  }
+
+  Serial.println("   Writing the config file");
+  json.printTo(Serial);
+  Serial.println("");
+  if(json.printTo(configFile) == 0){
+    Serial.println("    Failed to write to file");
+  }
+
+  Serial.println("   Closing the config file");
+  configFile.close();
+
+  Serial.println("   Done");
+  return true;
 }
-
-void Controller::set_i(float _i){
-  i = _i;
-  PIDSetTunings(p, i, d);
-}
-
-
-void Controller::set_d(float _d){
-  d = _d;
-  PIDSetTunings(p, i, d);
-}
-

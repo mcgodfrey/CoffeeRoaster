@@ -1,4 +1,10 @@
-#include "internet.h"
+#include "setup.h"
+#include <FS.h>
+#include <ESP8266WiFi.h>
+#include <WiFiManager.h>         //https://github.com/tzapu/WiFiManager
+#include <WiFiClient.h>
+#include <WiFiUdp.h>
+#include <ESP8266mDNS.h>
 
 // NTP server requirements
 WiFiUDP UDP;
@@ -9,14 +15,40 @@ byte NTPBuffer[NTP_PACKET_SIZE]; // buffer to hold incoming and outgoing packets
 unsigned long lastNTPResponse = 0;
 uint32_t NTPtime = 0;
 
-uint32_t getTime(void);
-void sendNTPpacket(IPAddress& address); 
+
+/* helper functions */
+static uint32_t getTime(void);
+static void sendNTPpacket(IPAddress& address); 
+static void startUDP(void);
+static String formatBytes(size_t bytes);
 
 
-/* Need to call this once at the very beginning to connect */
+/*
+ * Initialise the filesystem.
+ * Must be called once at the beginning.
+ * Prints FS contents to serial
+ */
+void SPIFFSSetup(){
+  SPIFFS.begin();
+  Dir dir = SPIFFS.openDir("/");
+  while (dir.next()) {    
+    String fileName = dir.fileName();
+    size_t fileSize = dir.fileSize();
+    Serial.printf("FS File: %s, size: %s\n", fileName.c_str(), formatBytes(fileSize).c_str());
+  }
+  Serial.printf("\n");
+}
+
+
+/* 
+ * Connect to the wifi.
+ * Uses wifiManager library which sets up in AP mode to allow you to connect and configure wifi
+ * From then on it remembers connection settings and automatically connects to known networks.
+ * 
+ * Also set up MDNS server (which I haven't been able to get working from my windows machine yet. Or android.)
+ */
 void setupWIFI(){
   Serial.println("Starting WIFI");
-
 
   WiFiManager wifiManager;
   //wifiManager.resetSettings();
@@ -33,7 +65,15 @@ void setupWIFI(){
   }
 }
 
+
+/*
+ * Setup for NTP to get the current time
+ * Needs a UDP server, and then sends a packet to request the time.
+ * Main code then needs to call NTPGetTime() to get the time.
+ */
 void setupNTP(){
+  startUDP();
+
   if(!WiFi.hostByName(NTPServerName, timeServerIP)) { // Get the IP address of the NTP server
     Serial.println("DNS lookup failed. Rebooting.");
     Serial.flush();
@@ -46,6 +86,10 @@ void setupNTP(){
   delay(500);
 }
 
+
+/*
+ * Start a UDP server (needed for NTP)
+ */
 void startUDP() {
   Serial.println("Starting UDP");
   UDP.begin(123);                          // Start listening for UDP messages on port 123
@@ -107,4 +151,17 @@ void sendNTPpacket(IPAddress& address) {
   UDP.beginPacket(address, 123); // NTP requests are to port 123
   UDP.write(NTPBuffer, NTP_PACKET_SIZE);
   UDP.endPacket();
+}
+
+
+String formatBytes(size_t bytes){
+  if (bytes < 1024){
+    return String(bytes)+"B";
+  } else if(bytes < (1024 * 1024)){
+    return String(bytes/1024.0)+"KB";
+  } else if(bytes < (1024 * 1024 * 1024)){
+    return String(bytes/1024.0/1024.0)+"MB";
+  } else {
+    return String(bytes/1024.0/1024.0/1024.0)+"GB";
+  }
 }

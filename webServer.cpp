@@ -1,5 +1,8 @@
-#include <Arduino.h>
 #include "webServer.h"
+#include <Arduino.h>
+#include <FS.h>
+#include <ArduinoJson.h>
+#include "controller.h"
 
 
 typedef struct {
@@ -21,29 +24,30 @@ File fsUploadFile;
 
 // Handlers
 //admin
-void handleUpload(void);
-void handleFileUpload(void);
+static void handleUpload(void);
+static void handleFileUpload(void);
 //void handleFileDelete(void);
-void handleFileList(void);
-bool handleFileRead(String path);
-void handleNotFound(void);
+static void handleFileList(void);
+static bool handleFileRead(String path);
+static void handleNotFound(void);
 //websocket
-void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length);
+static void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length);
 
 
 //helpers
-int lookup_param_value(String param, Param *response_data);
-int set_param_value(String param, JsonVariant value);
-int run_command(String command);
-void getStatus(Status *status);
-String status2JSON(Status status);
-int handleUpdateMessage(uint8_t *message);
+static bool lookup_param_value(String param, Param *response_data);
+static bool set_param_value(String param, JsonVariant value);
+static bool run_command(String command);
+static void getStatus(Status *status);
+static void sendStatus(uint8_t num);
+static String status2JSON(Status status);
+static bool handleUpdateMessage(uint8_t *message);
 
 // Helpers
-String getContentType(String filename);
-String formatBytes(size_t bytes);
-void serve_html(String path);
-void send_404(void);
+static String getContentType(String filename);
+static String formatBytes(size_t bytes);
+static void serve_html(String path);
+static void send_404(void);
 
 ///////////////////////////////////
 // Setup functions
@@ -61,7 +65,7 @@ void webserverSetup(){
   server.onNotFound(handleNotFound);
 
   server.begin();
-    
+
   Serial.println("HTTP server started");
 
   webSocket.onEvent(webSocketEvent);
@@ -83,20 +87,18 @@ void webserverPushDatapoint(uint32_t timestamp, double setpoint, double output, 
   webSocket.broadcastTXT(dataString);
 }
 
-/*
- * populate a status cluster with data
- */
-void getStatus(Status *status){
-  Serial.printf("Getting status\n");
-  status->numParams = 0;
-  
-  int num_params = 8;
-  String params[] = {"p", "i", "d", "setpoint", "temperature", "programMode", "state", "duty_cycle"};
-  for(int i=0; i<num_params; i++){
-    lookup_param_value(params[i], &status->data[i]);
-    //Serial.print(params[i]);Serial.print(" = "); Serial.println(status->data[i].name);
-    status->numParams++;
-  }
+void webserverLog(String log){
+  webSocket.broadcastTXT(String("{\"type\":\"log\",\"data\":\"") + log + String("\"}"));
+}
+
+void webserverPushData(String name, double data){
+  Status status;
+  status.numParams = 1;
+  status.data[0].name = name;
+  status.data[0].doubleValue = data;
+  status.data[0].dataType = "double";
+  String statusString = status2JSON(status);
+  webSocket.broadcastTXT(statusString);
 }
 
 
@@ -110,32 +112,17 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length
       Serial.printf("[%u] Disconnected!\n", num);
       break;
     case WStype_CONNECTED:
+      // Send the status immediately on connection
       {
         IPAddress ip = webSocket.remoteIP(num);
         Serial.printf("[%u] Connected from %d.%d.%d.%d url: %s\n", num, ip[0], ip[1], ip[2], ip[3], payload);
-        Status status;
-        getStatus(&status);
-        String statusString = status2JSON(status);
-        webSocket.sendTXT(num, statusString);
       }
-      // send message to client
-      webSocket.sendTXT(num, "Connected");
+      sendStatus(num);
       break;
     case WStype_TEXT:
       Serial.printf("[%u] get Text: %s\n", num, payload);
-
       handleUpdateMessage(payload);
-      //  Serial.printf(" Error handling message<%s>\n ", payload);
-      //  //webSocket.sendTXT(num, String("Error handling message")); // <" + String(payload) + String(">")));
-      //}
-
-      // And send the new status
-      {
-        Status status;
-        getStatus(&status);
-        String statusString = status2JSON(status);
-        webSocket.sendTXT(num, statusString);
-      }
+      sendStatus(num);
       break;
     case WStype_BIN:
       Serial.printf("[%u] get binary length: %u\n", num, length);
@@ -152,11 +139,21 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length
 
 
 /*
+ * Send the status to client number "num"
+ */
+void sendStatus(uint8_t num){
+  Status status;
+  getStatus(&status);
+  String statusString = status2JSON(status);
+  webSocket.sendTXT(num, statusString);
+}
+
+/*
  * Called whenever we receive a message from the client.
  * It should handle updating parameters and running commands.
  */
-int handleUpdateMessage(uint8_t *message){
-  int error = 0;
+bool handleUpdateMessage(uint8_t *message){
+  bool error = false;
   
   //parse the JSON input
   StaticJsonBuffer<500> jsonBuffer;
@@ -177,34 +174,56 @@ int handleUpdateMessage(uint8_t *message){
       }
     }
   }else{
-    error = 1;
+    error = true;
   }
 
   return(error);
 }
 
 
-int run_command(String command){
-  int success;
+/*
+ * populate a status cluster with data
+ */
+void getStatus(Status *status){
+  Serial.printf("Getting status\n");
+  status->numParams = 0;
+  
+  int num_params = 8;
+  String params[] = {"p", "i", "d", "setpoint", "temperature", "programMode", "state", "duty_cycle"};
+  for(int i=0; i<num_params; i++){
+    lookup_param_value(params[i], &status->data[i]);
+    status->numParams++;
+  }
+}
+
+
+bool run_command(String command){
+  bool success = false;
   if(command == "start"){
     Serial.println("  Starting controller");
     controller.start();
-    success = 1;
+    success = true;
   }else if(command == "stop"){
     Serial.println("  Stopping controller");
     controller.stop();
-    success = 1;
+    success = true;
   }else if(command == "restart"){
     Serial.println("  Restarting controller");
     controller.restart();
-    success = 1;
+    success = true;
+  }else if(command == "saveConfig"){
+    Serial.println("  Saving controller config");
+    controller.saveConfig();
+    success = true;
   }else if(command == "simple_mode"){
     Serial.println("  Switch to simple mode - Not implemented yet");
+    success = true;
   }else if(command == "program_mode"){
     Serial.println("  Switch to program mode - Not implemented yet");
+    success = true;
   }else{
     Serial.print("  Unknown command: "); Serial.println(command);
-    success = 0;
+    success = false;
   }
   return(success);
 }
@@ -212,27 +231,27 @@ int run_command(String command){
 /*
  * Look up the value of parameter "param"
  * Populate the response_data struct
- * return 1 or 0 for found/not found
+ * return true/false for found/not found
  */
-int lookup_param_value(String param, Param *response_data){
+bool lookup_param_value(String param, Param *response_data){
   response_data->name = param;
   if(param == "p"){
-    response_data->doubleValue = controller.p;
+    response_data->doubleValue = controller.getP();
     response_data->dataType = "double";
   }else if(param == "i"){
-    response_data->doubleValue = controller.i;
+    response_data->doubleValue = controller.getI();
     response_data->dataType = "double";
   }else if(param == "d"){
-    response_data->doubleValue = controller.d;
+    response_data->doubleValue = controller.getD();
     response_data->dataType = "double";
   }else if(param == "setpoint"){
-    response_data->doubleValue = controller.setpoint;
+    response_data->doubleValue = controller.getSetpoint();
     response_data->dataType = "double";
   }else if(param == "ramp_rate"){
     response_data->doubleValue = controller.ramp_rate;
     response_data->dataType = "double";
   }else if(param == "temperature"){
-    response_data->doubleValue = controller.temperature;
+    response_data->doubleValue = controller.getTemperature();
     response_data->dataType = "double";
   }else if(param == "programMode"){
     response_data->doubleValue = controller.programMode;
@@ -242,34 +261,31 @@ int lookup_param_value(String param, Param *response_data){
     response_data->dataType = "double";
   }else if(param == "duty_cycle"){
     response_data->doubleValue = controller.triac.duty_cycle;
-    response_data->dataType = "double";
-  }else if(param == "filename"){
-    response_data->strValue = controller.filename;
-    response_data->dataType = "string";            
+    response_data->dataType = "double";           
   }else{
-    return 0;
+    return false;
   }
-  return 1;
+  return true;
 }
 
 
-int set_param_value(String param, JsonVariant value){
-  int status;
+bool set_param_value(String param, JsonVariant value){
+  bool status = false;
   if(param == "p" && value.is<float>()){
-    controller.set_p(value.as<float>());
-    status=1;
+    controller.setP(value.as<float>());
+    status = true;
   }else if(param == "i" && value.is<float>()){
-    controller.set_i(value.as<float>());
-    status=1;
+    controller.setI(value.as<float>());
+    status = true;
   }else if(param == "d" && value.is<float>()){
-    controller.set_d(value.as<float>());
-    status=1;
+    controller.setD(value.as<float>());
+    status = true;
   }else if(param == "setpoint" && value.is<float>()){
-    controller.updateSetpoint(value.as<float>());
-    status=1;
+    controller.setSetpoint(value.as<float>());
+    status = true;
   }else if(param == "ramp_rate" && value.is<float>()){
     controller.ramp_rate = value.as<float>();
-    status=1;
+    status = true;
   }
   return(status);
 }
@@ -300,17 +316,6 @@ String status2JSON(Status status){
   return(statusString);
 }
 
-void SPIFFSSetup(){
-  SPIFFS.begin();
-  Dir dir = SPIFFS.openDir("/");
-  while (dir.next()) {    
-    String fileName = dir.fileName();
-    size_t fileSize = dir.fileSize();
-    Serial.printf("FS File: %s, size: %s\n", fileName.c_str(), formatBytes(fileSize).c_str());
-  }
-  Serial.printf("\n");
-}
-
 
 void handleUpload(){
   //Should first check if there is an upload.html and try to use that. If not then fall back onto this hard coded one.
@@ -338,13 +343,15 @@ void handleFileUpload(){
     if(fsUploadFile) {                                    // If the file was successfully created
       fsUploadFile.close();                               // Close the file again
       Serial.print("handleFileUpload Size: "); Serial.println(upload.totalSize);
-      server.sendHeader("Location","/success.html");      // Redirect the client to the success page
+      server.sendHeader("Location","/upload");      // Redirect the client to the success page
       server.send(303);
     } else {
       server.send(500, "text/plain", "500: couldn't create file");
     }
   }
 }
+
+
 /*
 void handleFileDelete(){
   if(server.args() == 0) return server.send(500, "text/plain", "BAD ARGS");
@@ -359,6 +366,8 @@ void handleFileDelete(){
   path = String();
 }
 */
+
+
 void handleFileList() {
   String path;
   if(server.hasArg("dir")){
@@ -391,6 +400,7 @@ void handleFileList() {
   output += "]";
   server.send(200, "text/json", output);
 }
+
 
 // send the right file to the client (if it exists)
 bool handleFileRead(String path) {

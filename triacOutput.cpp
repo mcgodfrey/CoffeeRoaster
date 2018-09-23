@@ -2,7 +2,8 @@
  * Burst mode triac controller
  */
 #include <Arduino.h>
-#include "output.h"
+#include "triacOutput.h"
+#include "webserver.h"
 
 
 TriacOutput::TriacOutput(int8_t triggerPin_in){
@@ -35,7 +36,6 @@ void TriacOutput::disable(){
  */
 void TriacOutput::process(){
   if(enabled){
-    //Serial.println("Output enabled in TriacOutput::process()");
     unsigned long currentTime = millis();
     if(currentTime - periodStartTime >= period){
       periodStartTime = currentTime;
@@ -46,7 +46,6 @@ void TriacOutput::process(){
       digitalWrite(triggerPin, LOW);
     }
   }else{
-    //Serial.println("Output disabled in TriacOutput::process()");
     digitalWrite(triggerPin, LOW);
   }
 }

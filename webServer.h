@@ -13,15 +13,14 @@
 #include <WiFiClient.h>
 #include <ESP8266WebServer.h>
 #include <WebSocketsServer.h>
-#include <FS.h>
-#include <ArduinoJson.h>
-#include "controller.h"
+
 
 extern ESP8266WebServer server;
 extern WebSocketsServer webSocket;
 
 void webserverSetup(void);
-void SPIFFSSetup(void);
 void webserverPushDatapoint(uint32_t timestamp, double setpoint, double output, double temperature);
+void webserverLog(String log);
+void webserverPushData(String name, double data);
 
 #endif  //WEBSERVER_H
