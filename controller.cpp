@@ -8,12 +8,12 @@
 #define DEFAULT_I 0.03
 #define DEFAULT_D 0.02
 
-Controller controller(TRIAC_PIN, FAN_PIN);
+Controller controller(TRIAC_PIN, FAN_PIN, SAMPLE_INTERVAL);
 
 String config_filename = String("config.json");
 
 
-Controller::Controller(uint8_t triac_pin, uint8_t fan_pin) :
+Controller::Controller(uint8_t triac_pin, uint8_t fan_pin, unsigned long sampleInterval) :
     thermocouple(SS),
     triac(triac_pin),
     fan(fan_pin),
@@ -29,37 +29,48 @@ Controller::Controller(uint8_t triac_pin, uint8_t fan_pin) :
   myPID.setOutputLimits(0, 100);
   myPID.setSetpoint(0);
   thermocouple.begin();
+  _prevMillis = millis();
+  _actualTime = 0;
+  _sampleInterval = sampleInterval;
 }
 
 
-void Controller::process(uint32_t actualTime){
-  if(controller.programMode == SIMPLE){
-    double temperature = getTemperature();
-    webserverPushData("temperature", temperature);
-    if(controller.state == OFF){
-      controller.triac.disable();
-      controller.fan.off();
-    }else if(controller.state == HOLD){
-      controller.fan.on();
-      double output = myPID.compute(temperature);
-     webserverPushData("duty_cycle", output);
-      triac.duty_cycle = output;
-      triac.enable();
-      webserverPushDatapoint(actualTime, myPID.getSetpoint(), output, temperature);
+void Controller::process(){
+  unsigned long currentMillis = millis();
+  unsigned long elapsed_time = currentMillis - _prevMillis;
+  if(elapsed_time > _sampleInterval){
+    _actualTime += elapsed_time/1000.0;
+    _prevMillis = currentMillis;
+    
+    if(controller.programMode == SIMPLE){
+      double temperature = getTemperature();
+      webserverPushData("temperature", temperature);
+      if(controller.state == OFF){
+        controller.triac.disable();
+        controller.fan.off();
+      }else if(controller.state == HOLD){
+        controller.fan.on();
+        double output = myPID.compute(temperature);
+       webserverPushData("duty_cycle", output);
+        triac.duty_cycle = output;
+        triac.enable();
+        webserverPushDatapoint(_actualTime, myPID.getSetpoint(), output, temperature);
+      }else{
+        //Error: unexpected state
+        String error_msg = String("Error - unexpected state: ") + String(controller.state);
+        Serial.println(error_msg);
+        webserverLog(error_msg);
+        controller = Controller(TRIAC_PIN, FAN_PIN, SAMPLE_INTERVAL);
+      }
     }else{
-      //Error: unexpected state
-      String error_msg = String("Error - unexpected state: ") + String(controller.state);
+      //error reset the controller
+      String error_msg = String("Error - unknown programMode: ") + String(controller.programMode);
       Serial.println(error_msg);
       webserverLog(error_msg);
-      controller = Controller(TRIAC_PIN, FAN_PIN);
+      controller = Controller(TRIAC_PIN, FAN_PIN, SAMPLE_INTERVAL);
     }
-  }else{
-    //error reset the controller
-    String error_msg = String("Error - unknown programMode: ") + String(controller.programMode);
-    Serial.println(error_msg);
-    webserverLog(error_msg);
-    controller = Controller(TRIAC_PIN, FAN_PIN);
   }
+  triac.process();
   return;
 }
 
@@ -79,6 +90,8 @@ void Controller::start(){
   if(state != HOLD){
     myPID.reset();
     state = HOLD;
+    _actualTime = 0;
+    _prevMillis = millis();
   }
 }
 

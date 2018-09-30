@@ -60,16 +60,10 @@ var connection;
 
 var states = ["OFF", "PREHEATING", "PREHEAT", "RAMPING", "HOLD", "COOLING"]
 
-var t0;
-var outputs = [];
-var setpoints = [];
-var temperatures = [];
-
-var filename = "";
-var running = 0;
-var initialised = 0;
+var t0 = -1;
 
 var timerPointer;
+var myChart;
 
 /*
  * Callback function when a websocket message is received from the server
@@ -93,17 +87,17 @@ websocket_message = function (e) {
                     if(state == 0){
                         document.getElementById("simple_start_stop_button").innerHTML = "Start";
                         document.getElementById("simple_restart_button").style.display = "none";
-                        running = 0;
                     }else{
                         document.getElementById("simple_start_stop_button").innerHTML = "Stop";
                         document.getElementById("simple_restart_button").style.display = "";
-                        running = 1;
                     }
                 }else if(key == "temperature"){
                     document.getElementById("status_temp").innerHTML = "Temp = " + data[key];
                 }else if(key == "ramp_rate"){
                     document.getElementById("setpoint_ramp_rate").value = data[key];
                 }else if (key == "duty_cycle"){
+                    document.getElementById("status_duty_cycle").innerHTML = "duty_cycle = " + data[key];
+                }else if (key == "output"){
                     document.getElementById("status_duty_cycle").innerHTML = "duty_cycle = " + data[key];
                 }else if (key == "setpoint"){
                     document.getElementById("status_setpoint").innerHTML = "setpoint = " + data[key];
@@ -124,14 +118,18 @@ websocket_message = function (e) {
         }
     }else if(msg.type == "data"){
         var data = msg.data.split(",", 4);
-        if(outputs.length == 0){
+        if(t0 < 0){
             t0 = parseInt(data[0]);
         }
         var timestamp = parseInt(data[0]) - t0;
-        setpoints.push({x: timestamp, y: parseFloat(data[1])});
-        outputs.push({x: timestamp, y: parseFloat(data[2])});
-        temperatures.push({x: timestamp, y: parseFloat(data[3])});
-        drawChart();
+        myChart.data.datasets[0].data.push({x: timestamp, y: parseFloat(data[3])});
+        myChart.data.datasets[1].data.push({x: timestamp, y: parseFloat(data[1])});
+        myChart.data.datasets[2].data.push({x: timestamp, y: parseFloat(data[2])});
+        //setpoints.push({x: timestamp, y: parseFloat(data[1])});
+        //outputs.push({x: timestamp, y: parseFloat(data[2])});
+        //temperatures.push({x: timestamp, y: parseFloat(data[3])});
+        //drawChart();
+        myChart.update();
     }else{
         console.log("Unhandled message type");
     }
@@ -144,10 +142,11 @@ websocket_message = function (e) {
  * It would be nice to reconnect to the server if the socket is dropped for some reason.
  */
 function init() {
+    myChart = drawChart();
+    
     connection = new WebSocket('ws://'+location.host+':81/', ['arduino']);
     connection.onopen = function () {
         console.log('new connection');
-        initialised = 0;
     };
     connection.onmessage = websocket_message;
 
@@ -172,22 +171,22 @@ function drawChart(){
 	data: {
 	    datasets: [{
 		label: 'temperature',
+		fill: false,
 		backgroundColor: 'rgba(255, 0, 0, 0.2)',
 		borderColor: 'rgba(255, 0, 0, 0.2)',
-		data: temperatures,
-		fill: false,
+		data: [],
 	    }, {
 		label: 'setpoint',
 		fill: false,
 		backgroundColor: 'rgba(0, 0, 255, 0.2)',
 		borderColor: 'rgba(0, 0, 255, 0.2)',
-		data: setpoints,
+		data: [],
 	    }, {
 		label: 'output',
 		fill: false,
 		backgroundColor: 'rgba(0, 255, 0, 0.2)',
 		borderColor: 'rgba(0, 255, 0, 0.2)',
-		data: outputs,
+		data: [],
 	    }]
 	},
 	options: {
@@ -224,6 +223,7 @@ function drawChart(){
 	    }
 	}
     });
+    return myChart;
 }
 
 
@@ -241,6 +241,7 @@ document.getElementById("switch_to_simple_mode_button").onclick = function() {
 }
 
 
+window.addEventListener('resize', function () { myChart.resize() })
 
 
 /**************************************************
@@ -280,32 +281,27 @@ function save_config(){
 function start_controller(){
     document.getElementById("simple_start_stop_button").innerHTML = "Stop";
     document.getElementById("simple_restart_button").style.display = "";
-
-    // Reset the arrays to empty to start a new run
-    outputs = [];
-    setpoints = [];
-    temperatures = [];
+    t0 = -1;
+    myChart = drawChart();
     
     connection.send('{"commands":["start"]}');
-    running = 1;
 }
 
 function stop_controller(){
     document.getElementById("simple_start_stop_button").innerHTML = "Start";
     document.getElementById("simple_restart_button").style.display = "none";
+    t0 = -1;
+
     connection.send('{"commands":["stop"]}');
-    running = 0;
 }
 
 
 function restart_controller() {
     // Reset the arrays to empty to start a new run
-    outputs = [];
-    setpoints = [];
-    temperatures = [];
+    t0 = -1;
+    myChart = drawChart();
 
     connection.send('{"commands":["restart"]}');
-    reloadData();
 }
 
 

@@ -11,8 +11,5 @@
 
 void SPIFFSSetup(void);
 void setupWIFI(void);
-void setupNTP(void);
-uint32_t NTPGetTime(void);
-
 
 #endif //SETUP_H

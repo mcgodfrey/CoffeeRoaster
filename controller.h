@@ -18,6 +18,7 @@
 
 #define FAN_PIN D3
 #define TRIAC_PIN D2
+#define SAMPLE_INTERVAL 2000
 
 enum ProgramMode {SIMPLE, PROGRAM};
 enum State {OFF, PREHEATING, PREHEAT, RAMPING, HOLD, COOLING};
@@ -27,15 +28,18 @@ class Controller{
     ProgramMode programMode;
     State state;
     double ramp_rate;
+    unsigned long _prevMillis;
+    unsigned long _sampleInterval;
+    unsigned long _actualTime;
     
     Adafruit_MAX31855 thermocouple;
     TriacOutput triac;
     Fan fan;
     PID myPID;
 
-    Controller(uint8_t triac_pin, uint8_t fan_pin);
+    Controller(uint8_t triac_pin, uint8_t fan_pin, unsigned long sampleInterval);
     
-    void process(uint32_t actualTime);
+    void process();
     void start();
     void stop();
     void restart();
